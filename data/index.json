@@ -1,0 +1,8 @@
+{
+    "config": {
+        "chunk_size": 2000,
+        "code_overlap": 0,
+        "doc_overlap": 0
+    },
+    "files": {}
+}
