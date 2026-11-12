@@ -7,7 +7,7 @@ import tempfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-
+from langchain_core.documents import Document
 
 class Indexer:
     """Load, manage, and save the index dictionary."""
@@ -137,15 +137,68 @@ class Indexer:
         except (OSError, TypeError, ValueError) as err:
             raise OSError(f"Cannot save index: {err}") from err
 
-        def config_changed(self) -> bool:
+    def config_changed(self) -> bool:
             """Check whether chunking configuration has changed."""
             return self.index["config"] != self.current_config
 
-    def update_file(self,path: str,chunk_ids: list[str]) -> None:
-        """Record an indexed file in the dictionary."""
+    
+
+
+    def update_file(self, path: str, chunks: list[Document]) -> None:
+        """Save a file's timestamp and its chunks in the index."""
         file_path = Path(path)
+
+        file_chunks = []
+
+        for chunk in chunks:
+            file_chunks.append({
+                "page_content": chunk.page_content,
+                "metadata": chunk.metadata,
+            })
 
         self.index["files"][path] = {
             "mtime_ns": file_path.stat().st_mtime_ns,
-            "chunk_ids": chunk_ids,
+            "chunks": file_chunks,
+        }
+
+
+    
+    def detect_changes(self, paths: list[str]) -> dict[str, list[str]]:
+        """Detect new, modified, deleted, and unchanged files."""
+        new_files_paths = []
+        modified_file_paths = []
+        deleted_file_paths = []
+        unchanged_file_paths = []
+
+        indexed_files = self.index["files"]
+        current_paths = set(paths)
+
+        for path_file in current_paths:
+            if path_file not in indexed_files:
+                new_files_paths.append(path_file)
+                continue
+
+            try:
+                current_mtime = Path(path_file).stat().st_mtime_ns
+            except OSError as err:
+                raise OSError(
+                    f"Cannot check file {path_file}: {err}"
+                ) from err
+
+            saved_mtime = indexed_files[path_file]["mtime_ns"]
+
+            if current_mtime != saved_mtime:
+                modified_file_paths.append(path_file)
+            else:
+                unchanged_file_paths.append(path_file)
+
+        for path_file in indexed_files:
+            if path_file not in current_paths:
+                deleted_file_paths.append(path_file)
+
+        return {
+            "new": sorted(new_files_paths),
+            "modified": sorted(modified_file_paths),
+            "deleted": sorted(deleted_file_paths),
+            "unchanged": sorted(unchanged_file_paths),
         }

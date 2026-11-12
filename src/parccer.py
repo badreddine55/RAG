@@ -6,7 +6,7 @@ class Parccer():
         self.code_files: list[str] = []
         self.doc_files: list[str] = []
         self.code_ext = {".py"}
-        self.doc_ext = {".md", ".txt"}
+        self.doc_ext = {".md", ".txt",".rst"}
         self.ignored_dirs = {"__pycache__", ".git", ".venv", "node_modules"}
 
     def load_files(self, root: str | Path) -> tuple[list[str], list[str]]:
