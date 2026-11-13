@@ -141,6 +141,9 @@ class Indexer:
             """Check whether chunking configuration has changed."""
             return self.index["config"] != self.current_config
 
+    def reset_index(self)-> None:
+        self.index["config"] = self.current_config
+        self.index["files"] = {}
     
 
 

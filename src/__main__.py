@@ -1,3 +1,6 @@
+
+from pathlib import Path
+
 from .parccer import Parccer
 from .models import Chunk
 from .indexer import Indexer
@@ -5,36 +8,93 @@ from .indexer import Indexer
 
 if __name__ == "__main__":
     try:
-        code_paths, doc_paths = Parccer().load_files("data/raw/vllm-0.10.1")
+        directory = "data/raw/vllm-0.10.1"
+        chunk_size = 2000
+
+        code_paths, doc_paths = Parccer().load_files(directory)
+
+        chunker = Chunk(
+            directory=directory,
+            chunk_size=chunk_size,
+        )
+
+        indexer = Indexer(
+            "data/index.json",
+            chunk_size,
+            0,
+            0,
+        )
+
+        # Ignore empty files
+        code_paths = [
+            path for path in code_paths
+            if Path(path).stat().st_size > 0
+        ]
+
+        doc_paths = [
+            path for path in doc_paths
+            if Path(path).stat().st_size > 0
+        ]
+
         all_paths = code_paths + doc_paths
-        chunker = Chunk(directory="data/raw/vllm-0.10.1", chunk_size=2000)
-        indexer = Indexer("data/index.json",2000,0,0)
+
         changes = indexer.detect_changes(all_paths)
+
+        if indexer.config_changed():
+            print("Configuration changed. Rebuilding index...")
+
+            # Build a fresh index in memory
+            chunks = chunker.chunk_all(
+                code_paths,
+                doc_paths,
+            )
+
+            # Check that every non-empty file was processed
+            missing = set(all_paths) - set(chunks)
+
+            if missing:
+                raise ValueError(
+                    f"Cannot rebuild index: "
+                    f"{len(missing)} files produced no chunks"
+                )
+
+            indexer.reset_index()
+
+            for path, file_chunks in chunks.items():
+                indexer.update_file(path, file_chunks)
+
+        else:
+            files_to_process = (
+                changes["new"] + changes["modified"]
+            )
+
+            code_to_process = [
+                path for path in files_to_process
+                if path.endswith(".py")
+            ]
+
+            docs_to_process = [
+                path for path in files_to_process
+                if path.endswith((".md", ".txt", ".rst"))
+            ]
+
+            chunks = chunker.chunk_all(
+                code_to_process,
+                docs_to_process,
+            )
+
+            for path, file_chunks in chunks.items():
+                indexer.update_file(path, file_chunks)
+
+            for path in changes["deleted"]:
+                indexer.index["files"].pop(path, None)
+
+        indexer.save_index()
 
         print("New:", len(changes["new"]))
         print("Modified:", len(changes["modified"]))
         print("Deleted:", len(changes["deleted"]))
         print("Unchanged:", len(changes["unchanged"]))
-        chunks = chunker.chunk_all(code_paths, doc_paths)
-        indexer.load_index()
-        indexer.detect_changes(all_paths)
-        for path, file_chunks in chunks.items():
-            indexer.update_file(path,file_chunks)
-        
 
-        # print(chunks["data/raw/vllm-0.10.1/.buildkite/nightly-benchmarks/nightly-descriptions.md"])
-
-        indexer.save_index()
-        # for key, value in indexer.index.items():
-        #     if key == "files":
-        #         for path, file_chunks in value.items():
-        #             if path == "data/raw/vllm-0.10.1/.buildkite/nightly-benchmarks/nightly-descriptions.md":
-        #                 print(f"=== {path}  ({len(file_chunks)} chunks) ===")
-        #                 for key_file_dict, value_file_dict in file_chunks.items():
-        #                     if key_file_dict == "chunk_ids":
-        #                         print(value_file_dict)
-        # print(f"{len(code_paths)} code files, {len(doc_paths)} doc files")
-        # print(f"{len(chunks)} chunks total")
-
-    except (FileNotFoundError, ValueError) as err:
+    except (OSError, ValueError, TypeError) as err:
         print(f"Error: {err}")
